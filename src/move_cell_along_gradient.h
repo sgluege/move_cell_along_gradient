@@ -145,7 +145,7 @@ struct LinearConcentration {
 
         cells->Commit();  // commit cells
 
-        // 3. Define the substances in our simulation
+          // 3. Define the substances in our simulation
         // Order: substance id, substance_name, diffusion_coefficient, decay_constant,
         // resolution
         ModelInitializer::DefineSubstance(kSubstance, "Substance", 0, 0, 20);
