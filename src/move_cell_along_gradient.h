@@ -95,73 +95,117 @@ struct LinearConcentration {
 // -----------------------------------------------------------------------------
 
 // 1. Create list of substances
-    enum Substances { kSubstance };
+enum Substances { kSubstance };
+
+// Define displacement behavior:
+// Cells move along the diffusion gradient (from low concentration to high)
+struct Chemotaxis : public BaseBiologyModule {
+    Chemotaxis() : BaseBiologyModule(gAllEventIds) {}
+
+    /// Empty default event constructor, because Chemotaxis does not have state.
+    template <typename TEvent, typename TBm>
+    Chemotaxis(const TEvent& event, TBm* other, uint64_t new_oid = 0) {}
+
+    /// event handler not needed, because Chemotaxis does not have state.
+
+    template <typename T, typename TSimulation = Simulation<>>
+    void Run(T* cell) {
+        auto* sim = TSimulation::GetActive();
+        auto* rm = sim->GetResourceManager();
+        static auto* kDg = rm->GetDiffusionGrid(kSubstance);
+        kDg->SetConcentrationThreshold(1e15);
+
+        auto& position = cell->GetPosition();
+        std::array<double, 3> gradient;
+        kDg->GetGradient(position, &gradient);
+        gradient[0] *= 0.5;
+        gradient[1] *= 0.5;
+        gradient[2] *= 0.5;
+
+        cell->UpdatePosition(gradient);
+    }
+
+private:
+    BDM_CLASS_DEF_NV(Chemotaxis, 1);
+};
+
+
+
 
 // 2. Use default compile-time parameters to let the compiler know we are not
 // using any new biology modules or cell types
-    BDM_CTPARAM() { BDM_CTPARAM_HEADER(); };
 
-    inline int Simulate(int argc, const char** argv) {
+// Define compile time parameter
+BDM_CTPARAM() {
+    BDM_CTPARAM_HEADER();
 
-        // set space parameters of the simulation
-        auto set_param = [](auto* param) {
-            param->bound_space_ = true;
-            param->min_bound_ = -(simulation_cube_dim/2);
-            param->max_bound_ = (simulation_cube_dim/2);  // cube of 4500*4500*4500
-            param->run_mechanical_interactions_ = true;
-        };
+    // Override default BiologyModules for Cell
+    BDM_CTPARAM_FOR(bdm, Cell) {
+        using BiologyModules = CTList<Chemotaxis>;
+    };
+};
 
-        Simulation<> simulation(argc, argv, set_param);
-        auto* rm = simulation.GetResourceManager();  // get pointer to resource manager
-        auto* random = simulation.GetRandom();  // get thread of local random number generator.
+inline int Simulate(int argc, const char** argv) {
+    // set space parameters of the simulation
+    auto set_param = [](auto* param) {
+        param->bound_space_ = true;
+        param->min_bound_ = -(simulation_cube_dim/2);
+        param->max_bound_ = (simulation_cube_dim/2);  // cube of 4500*4500*4500
+        param->run_mechanical_interactions_ = true;
+    };
 
-        double x_coord, y_coord, z_coord;
+    Simulation<> simulation(argc, argv, set_param);
+    auto* rm = simulation.GetResourceManager();  // get pointer to resource manager
+    auto* random = simulation.GetRandom();  // get thread of local random number generator.
 
-        // 2D plate for precursor cells (150x150)
-        double x_min = 0 - (x_range/2);  // set position of the plate with (0,0) at the center of the simulation space
-        double x_max = 0 + (x_range/2);
-        double y_min = 0 - (y_range/2);
-        double y_max = 0 + (y_range/2);
+    double x_coord, y_coord, z_coord;
 
-        // create a structure to contain cells
-        auto* cells = rm->template Get<Cell>();
-        // allocate the correct number of cell in our cells structure before
-        // cell creation
-        cells->reserve(num_precursor_cells);
+    // 2D plate for precursor cells (150x150)
+    double x_min = 0 - (x_range/2);  // set position of the plate with (0,0) at the center of the simulation space
+    double x_max = 0 + (x_range/2);
+    double y_min = 0 - (y_range/2);
+    double y_max = 0 + (y_range/2);
 
-        // create 2d Layer of cells
-        for (size_t i = 0; i < num_precursor_cells; ++i) {
-            // create coordinates for cells in 2D plate
-            x_coord = random->Uniform(x_min, x_max);
-            y_coord = random->Uniform(y_min, y_max);
-            z_coord = z_pos_precursor;
+    // create a structure to contain cells
+    auto* cells = rm->template Get<Cell>();
+    // allocate the correct number of cell in our cells structure before
+    // cell creation
+    cells->reserve(num_precursor_cells);
 
-            // creating the cell at position x, y, z
-            Cell cell({x_coord, y_coord, z_coord});
-            // set cell parameters
-            cell.SetDiameter(default_cell_diameter);
-            cells->push_back(cell);  // put the created cell in our cells structure
-        }
+    // create 2d Layer of cells
+    for (size_t i = 0; i < num_precursor_cells; ++i) {
+        // create coordinates for cells in 2D plate
+        x_coord = random->Uniform(x_min, x_max);
+        y_coord = random->Uniform(y_min, y_max);
+        z_coord = z_pos_precursor;
 
-        cells->Commit();  // commit cells
-
-          // 3. Define the substances in our simulation
-        // Order: substance id, substance_name, diffusion_coefficient, decay_constant,
-        // resolution
-        ModelInitializer::DefineSubstance(kSubstance, "Substance", 0, 0, 20);
-
-        // Init substance with linear concentration distribution
-        //  LinearGradiend(double startvalue, double endvalue, double startpos, double endpos, uint8_t axis)
-        ModelInitializer::InitializeSubstance(kSubstance, "Substance",
-                                              LinearConcentration(0, 100, 0, simulation_cube_dim/2, Axis::kZAxis));
-
-
-        // 4. Run simulation for N timesteps
-        simulation.GetScheduler()->Simulate(simulation_steps);
-
-        std::cout << "Simulation completed successfully!\n";
-        return 0;
+        // creating the cell at position x, y, z
+        Cell cell({x_coord, y_coord, z_coord});
+        // set cell parameters
+        cell.SetDiameter(default_cell_diameter);
+        cell.AddBiologyModule(Chemotaxis());
+        cells->push_back(cell);  // put the created cell in our cells structure
     }
+
+    cells->Commit();  // commit cells
+
+      // 3. Define the substances in our simulation
+    // Order: substance id, substance_name, diffusion_coefficient, decay_constant,
+    // resolution
+    ModelInitializer::DefineSubstance(kSubstance, "Substance", 0, 0, 20);
+
+    // Init substance with linear concentration distribution
+    //  LinearGradiend(double startvalue, double endvalue, double startpos, double endpos, uint8_t axis)
+    ModelInitializer::InitializeSubstance(kSubstance, "Substance",
+                                          LinearConcentration(0, 100, 0, simulation_cube_dim/2, Axis::kZAxis));
+
+
+    // 4. Run simulation for N timesteps
+    simulation.GetScheduler()->Simulate(simulation_steps);
+
+    std::cout << "Simulation completed successfully!\n";
+    return 0;
+}
 
 }  // namespace bdm
 
