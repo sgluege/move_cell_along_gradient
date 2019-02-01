@@ -25,15 +25,16 @@
 // set numer of simulation steps
 const int simulation_steps = 500; // 130000 Time between two simulation steps equals: 0.01hours (default)
 
-// size of 2d layer for precursor cells
-const double x_range = 150, y_range = 150, z_range = 4500; // set dims of simulation space
-const double z_pos_precursor = 10; // (x/y range + z postion)
-const double simulation_cube_dim = std::max(x_range, y_range);
+//const double x_range = 150, y_range = 150, z_range = 4500; // set dims of simulation space
+//const double simulation_cube_dim = std::max(x_range, y_range);
+const double simulation_cube_dim = 100;
 
+const double z_pos_precursor = 0 - (simulation_cube_dim/2); // (x/y range + z postion)
 // number of precursor cells
 const size_t num_precursor_cells = 15;  // number of precursor cells (S1) in the simulation
 const int default_cell_diameter = 6;
 
+const double concentration_stop_threshold = 0.5;
 
 namespace bdm {
 
@@ -66,7 +67,7 @@ struct LinearConcentration {
         axis_ = axis;
 
         // compute slope of the linear function
-        slope_ = (endpos_ - startpos_) / (endvalue_ - startvalue_);
+        slope_ = (endvalue_ - startvalue_) / (endpos_ - startpos_);
         // and its intercept
         intercept_ = startvalue_ - (slope_ * startpos_);
     }
@@ -115,22 +116,30 @@ struct Chemotaxis : public BaseBiologyModule {
         static auto* kDg = rm->GetDiffusionGrid(kSubstance);
         kDg->SetConcentrationThreshold(1e15);
 
+        // get cell position
         auto& position = cell->GetPosition();
-        std::array<double, 3> gradient;
-        kDg->GetGradient(position, &gradient);
-        gradient[0] *= 0.5;
-        gradient[1] *= 0.5;
-        gradient[2] *= 0.5;
-
-        cell->UpdatePosition(gradient);
+        // get concentraion at the cell position
+        double act_concentration = kDg->GetConcentration(position);
+//    	//  std::cout << "Concentraion: " << act_concentration <<"\n";
+//
+//    	// check for concentration around cell
+	    if (act_concentration >= concentration_stop_threshold) {
+//          // stop movement if greater equal theshhold
+            // std::cout << "Concentration above threshold: " << act_concentration << "\n";
+        }
+	    else {
+	        std::array<double, 3> gradient;
+            kDg->GetGradient(position, &gradient);
+            gradient[0] *= 0.5;
+            gradient[1] *= 0.5;
+            gradient[2] *= 0.5;
+            cell->UpdatePosition(gradient);
+	    }
     }
 
 private:
     BDM_CLASS_DEF_NV(Chemotaxis, 1);
 };
-
-
-
 
 // 2. Use default compile-time parameters to let the compiler know we are not
 // using any new biology modules or cell types
@@ -161,10 +170,10 @@ inline int Simulate(int argc, const char** argv) {
     double x_coord, y_coord, z_coord;
 
     // 2D plate for precursor cells (150x150)
-    double x_min = 0 - (x_range/2);  // set position of the plate with (0,0) at the center of the simulation space
-    double x_max = 0 + (x_range/2);
-    double y_min = 0 - (y_range/2);
-    double y_max = 0 + (y_range/2);
+    double x_min = 0 - (simulation_cube_dim/2);  // set position of the plate with (0,0) at the center of the simulation space
+    double x_max = 0 + (simulation_cube_dim/2);
+    double y_min = 0 - (simulation_cube_dim/2);
+    double y_max = 0 + (simulation_cube_dim/2);
 
     // create a structure to contain cells
     auto* cells = rm->template Get<Cell>();
@@ -196,9 +205,7 @@ inline int Simulate(int argc, const char** argv) {
 
     // Init substance with linear concentration distribution
     //  LinearGradiend(double startvalue, double endvalue, double startpos, double endpos, uint8_t axis)
-    ModelInitializer::InitializeSubstance(kSubstance, "Substance",
-                                          LinearConcentration(0, 100, 0, simulation_cube_dim/2, Axis::kZAxis));
-
+    ModelInitializer::InitializeSubstance(kSubstance, "Substance", LinearConcentration(0, 1, 0, simulation_cube_dim/2, Axis::kZAxis));
 
     // 4. Run simulation for N timesteps
     simulation.GetScheduler()->Simulate(simulation_steps);
