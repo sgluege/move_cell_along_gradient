@@ -3,8 +3,10 @@
 
 Init a substance globaly to create a diffusion gradient for cells to move along.
 
-**TODO**:
-Create cells that move along the gradient and stop a certain levels of concentrations.
+Cells that move along the gradient and stop a certain levels of concentrations.
+In this case at concentration >= 0.5.
+
+![](doc/img/final_position.png)
 
 ## Version
 ```
